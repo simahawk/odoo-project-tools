@@ -2,8 +2,9 @@ from itertools import chain
 
 import click
 
-from ..utils import git, path, proj, ui
+from ..utils import git, path, proj, ui, db
 from ..utils import pending_merge as pm_utils
+from ..utils.os_exec import run
 
 
 @click.group()
@@ -129,6 +130,79 @@ def sync_remote(submodule_path=None, repo=None, force_remote=False):
             with path.cd(repo.abs_path):
                 git.checkout(branch_name=odoo_version)
 
+
+@cli.command()
+@click.option("--repos")
+@click.option("--show-diff", default=False)
+@click.option("--cmd-only", default=False)
+@click.option("--db-name")
+def show_changed_modules(
+    repos=None,
+    diff=False,
+    cmd_only=False,
+    dbname="odoodb",
+    rev=None,
+):
+    """Show list of installed addons that have changes in current checkout.
+
+    TODO
+
+    :param rev: pass a value for the revision as supported by `git diff -r` param
+        (eg: "master..HEAD")
+    """
+
+    by_repo = get_changed_addons_by_repo(dbname=dbname, rev=rev)
+    if not by_repo:
+        print("No change detected in installed addons")
+        return
+
+    repos = repos.split(",") if repos else None
+
+    whitelist = []
+    if repos:
+        for repo in repos:
+            try:
+                whitelist.extend(by_repo[repo])
+            except KeyError:
+                print(f"{repo} has no changes")
+    else:
+        for addons in by_repo.values():
+            whitelist.extend(addons)
+
+    cmd = make_diff_cmd(
+        manifest_only=not diff,
+        repos=repos,
+        diff=diff,
+        addons=whitelist,
+        rev=rev,
+    )
+    print("\n    " + cmd + "\n")
+    if cmd_only:
+        return
+    subdiff = ctx.run(cmd, hide=True).stdout
+    if diff:
+        print(subdiff)
+    else:
+        for repo_name, mods in by_repo.items():
+            if repos and repo_name not in repos:
+                continue
+            print(f"{repo_name}\n")
+            for i, mod_name in enumerate(mods):
+                print(f"  - {mod_name}", "\n" if i == len(mods) - 1 else "")
+
+
+def get_changed_addons_by_repo(dbname="odoodb", rev=None):
+    """Collect installed with changes grouped by repo"""
+    cmd = git.make_diff_cmd(rev=rev)
+    subdiff = run(cmd, hide=True).stdout
+    installed = db.get_installed_addons(ctx, dbname=dbname)
+    res = {}
+    for path in subdiff.split():
+        mod = Path(path).parent
+        repo = Path(path).parent.parent
+        if mod.name in installed:
+            res.setdefault(repo.name, []).append(mod.name)
+    return res
 
 if __name__ == "__main__":
     cli()

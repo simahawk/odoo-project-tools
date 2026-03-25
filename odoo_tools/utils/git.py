@@ -176,3 +176,43 @@ def get_current_branch():
 
 def delete_branch(branch_name):
     run(["git", "branch", "-D", branch_name])
+
+
+
+
+def make_diff_cmd(
+    manifest_only=True, repos=None, diff=False, addons=None, rev=None
+):
+
+    if not has_exec('filterdiff'):
+        msg = (
+            "** ERROR : `filterdiff` is not available"
+            "please run `sudo apt install patchutils`. **"
+        )
+        exit_msg(msg)
+        return
+
+    # subdiff_cmd = "git diff --submodule=diff | lsdiff --include='*/__manifest__.py'"
+    cmd = ["git diff --submodule=diff"]
+    if rev:
+        cmd.append(f"-r {rev}")
+    repos = repos or []
+    addons = addons or []
+    sub_path = "odoo/external-src"
+    ext_filter = "*.{py,xml}"
+    for repo in repos:
+        cmd.append(f"{sub_path}/{repo}")
+    # Weird, if we don't separate this filter it does not work -> DO NOT MOVE IT!
+    cmd.append("| filterdiff --exclude=*/setup/*")
+    if diff:
+        if addons:
+            ext_filter = "*/{" + ",".join(addons) + "}/*" + ext_filter
+        cmd.append(f"| filterdiff --include={ext_filter}")
+    else:
+        cmd.append("| lsdiff")
+        if manifest_only:
+            cmd.append("--include='*/__manifest__.py'")
+        else:
+            cmd.append("--include=*.{py,xml}")
+    return " ".join(cmd)
+

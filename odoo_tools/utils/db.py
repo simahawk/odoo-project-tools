@@ -191,3 +191,17 @@ def get_db_list() -> list[str]:
         AND datname not in ('postgres', 'odoo');
     """
     return [row[0] for row in execute_db_request("postgres", sql)]
+
+
+
+_INSTALLED = []
+
+
+def get_installed_addons(dbname="odoodb") -> list[str]:
+    global _INSTALLED
+    if _INSTALLED:
+        return _INSTALLED
+    query = "select name from ir_module_module where state = 'installed';"
+    result = execute_db_request(dbname, query)
+    _INSTALLED = [x[0] for x in result]
+    return _INSTALLED
